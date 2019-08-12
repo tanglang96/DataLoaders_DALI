@@ -13,7 +13,7 @@ In CIFAR-10 training, we can reduce tranining time **from** **1 day to 1 hour** 
 
 ## Requirements
 
-You only need to install nvidia-dali package
+You only need to install nvidia-dali package and version should be >= 0.12, we've tested version 0.11 and it didn't work
 
 ```bash
 #for cuda9.0
