@@ -37,3 +37,10 @@ for i, data in enumerate(train_loader):
     labels = data[0]["label"].squeeze().long().cuda(async=True)
 ```
 
+If you have large enough memory for storing dataset, we strongly recommend you to mount a memory disk and put the whole dataset in it to accelerate I/O, like this
+
+```bash
+mount  -t tmpfs -o size=20g  tmpfs /userhome/memoty_data
+```
+
+It's noteworthy that `20g` above is a ceiling but **not** occupying `20g` memory at the moment you mount the tmpfs, memories are occupied as you putting dataset in it. Compressed files should **not** be extracted before you've copied them into memory, otherwise it could be much slower.
