@@ -1,17 +1,16 @@
-from nvidia.dali.pipeline import Pipeline
+import os
+import sys
+import time
+import torch
+import pickle
+import numpy as np
 import nvidia.dali.ops as ops
 import nvidia.dali.types as types
-import numpy as np
-from nvidia.dali.plugin.pytorch import DALIClassificationIterator, DALIGenericIterator
-import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
-import torch
-import random
-import os
-import pickle
-import sys
 from sklearn.utils import shuffle
-import time
+from torchvision.datasets import CIFAR10
+from nvidia.dali.pipeline import Pipeline
+import torchvision.transforms as transforms
+from nvidia.dali.plugin.pytorch import DALIClassificationIterator, DALIGenericIterator
 
 
 class HybridTrainPipe_CIFAR(Pipeline):
@@ -191,8 +190,8 @@ if __name__ == '__main__':
     print('start iterate')
     start = time.time()
     for i, data in enumerate(train_loader):
-        images = data[0]["data"].cuda(async=True)
-        labels = data[0]["label"].squeeze().long().cuda(async=True)
+        images = data[0]["data"].cuda(non_blocking=True)
+        labels = data[0]["label"].squeeze().long().cuda(non_blocking=True)
     end = time.time()
     print('end iterate')
     print('dali iterate time: %fs' % (end - start))
@@ -202,8 +201,8 @@ if __name__ == '__main__':
     print('start iterate')
     start = time.time()
     for i, data in enumerate(train_loader):
-        images = data[0].cuda(async=True)
-        labels = data[1].cuda(async=True)
+        images = data[0].cuda(non_blocking=True)
+        labels = data[1].cuda(non_blocking=True)
     end = time.time()
     print('end iterate')
     print('dali iterate time: %fs' % (end - start))

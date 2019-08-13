@@ -2,7 +2,7 @@
 
 PyTorch DataLoaders implemented with [nvidia-dali](https://docs.nvidia.com/deeplearning/sdk/dali-developer-guide/docs/index.html), we've implemented **CIFAR-10** and **ImageNet** dataloaders, more dataloaders will be added in the future.
 
-With 2 processors of Intel(R) Xeon(R) Gold 6154 CPU, 1 Tesla V100 GPU and all dataset in memory disk, we can **extremely** **boost image preprocessing** with DALI.
+With 2 processors of Intel(R) Xeon(R) Gold 6154 CPU, 1 Tesla V100 GPU and all dataset in memory disk, we can **extremely** **accelerate image preprocessing** with DALI.
 
 | Iter Training Data Cost(bs=256) | CIFAR-10 | ImageNet |
 | :-----------------------------: | :------: | :------: |
