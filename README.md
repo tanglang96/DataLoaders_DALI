@@ -31,7 +31,8 @@ You can use these dataloaders easily as the following example
 ```python
 from cifar10 import get_cifar_iter_dali
 train_loader = get_cifar_iter_dali(type='train',
-                                   image_dir='/userhome/memory_data/cifar10',                                              batch_size=256,num_threads=4)
+                                   image_dir='/userhome/memory_data/cifar10',                                            
+                                   batch_size=256,num_threads=4)
 for i, data in enumerate(train_loader):
     images = data[0]["data"].cuda(async=True)
     labels = data[0]["label"].squeeze().long().cuda(async=True)
@@ -40,7 +41,7 @@ for i, data in enumerate(train_loader):
 If you have large enough memory for storing dataset, we strongly recommend you to mount a memory disk and put the whole dataset in it to accelerate I/O, like this
 
 ```bash
-mount  -t tmpfs -o size=20g  tmpfs /userhome/memoty_data
+mount  -t tmpfs -o size=20g  tmpfs /userhome/memory_data
 ```
 
 It's noteworthy that `20g` above is a ceiling but **not** occupying `20g` memory at the moment you mount the tmpfs, memories are occupied as you putting dataset in it. Compressed files should **not** be extracted before you've copied them into memory, otherwise it could be much slower.
