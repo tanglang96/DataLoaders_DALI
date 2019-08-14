@@ -34,8 +34,8 @@ train_loader = get_cifar_iter_dali(type='train',
                                    image_dir='/userhome/memory_data/cifar10',                                            
                                    batch_size=256,num_threads=4)
 for i, data in enumerate(train_loader):
-    images = data[0]["data"].cuda(async=True)
-    labels = data[0]["label"].squeeze().long().cuda(async=True)
+    images = data[0]["data"].cuda(non_blocking=True)
+    labels = data[0]["label"].squeeze().long().cuda(non_blocking=True)
 ```
 
 If you have large enough memory for storing dataset, we strongly recommend you to mount a memory disk and put the whole dataset in it to accelerate I/O, like this
