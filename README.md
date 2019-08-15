@@ -6,8 +6,8 @@ With 2 processors of Intel(R) Xeon(R) Gold 6154 CPU, 1 Tesla V100 GPU and all da
 
 | Iter Training Data Cost(bs=256) | CIFAR-10 | ImageNet |
 | :-----------------------------: | :------: | :------: |
-|              DALI               |   1.4s   | testing  |
-|           torchvision           |  280.1s  | testing  |
+|              DALI               |   1.4s(2 processors)   | 625s(8 processors)  |
+|           torchvision           |  280.1s(2 processors)  | 13400s(8 processors)  |
 
 In CIFAR-10 training, we can reduce tranining time **from** **1 day to 1 hour** with our hardware setting.
 
