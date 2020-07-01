@@ -5,13 +5,22 @@ import torch
 import pickle
 import numpy as np
 import nvidia.dali.ops as ops
+from base import DALIDataloader
 import nvidia.dali.types as types
 from sklearn.utils import shuffle
 from torchvision.datasets import CIFAR10
 from nvidia.dali.pipeline import Pipeline
 import torchvision.transforms as transforms
-from nvidia.dali.plugin.pytorch import DALIClassificationIterator, DALIGenericIterator
 
+CIFAR_MEAN = [0.49139968, 0.48215827, 0.44653124]
+CIFAR_STD = [0.24703233, 0.24348505, 0.26158768]
+CIFAR_IMAGES_NUM_TRAIN = 50000
+CIFAR_IMAGES_NUM_TEST = 10000
+IMG_DIR = '/userhome/data/cifar10'
+TRAIN_BS = 256
+TEST_BS = 200
+NUM_WORKERS = 4
+CROP_SIZE = 32
 
 class HybridTrainPipe_CIFAR(Pipeline):
     def __init__(self, batch_size, num_threads, device_id, data_dir, crop=32, dali_cpu=False, local_rank=0,
@@ -36,7 +45,7 @@ class HybridTrainPipe_CIFAR(Pipeline):
 
     def iter_setup(self):
         (images, labels) = self.iterator.next()
-        self.feed_input(self.jpegs, images)
+        self.feed_input(self.jpegs, images, layout="HWC")
         self.feed_input(self.labels, labels)
 
     def define_graph(self):
@@ -50,9 +59,9 @@ class HybridTrainPipe_CIFAR(Pipeline):
         return [output, self.labels]
 
 
-class HybridValPipe_CIFAR(Pipeline):
+class HybridTestPipe_CIFAR(Pipeline):
     def __init__(self, batch_size, num_threads, device_id, data_dir, crop, size, local_rank=0, world_size=1):
-        super(HybridValPipe_CIFAR, self).__init__(batch_size, num_threads, device_id, seed=12 + device_id)
+        super(HybridTestPipe_CIFAR, self).__init__(batch_size, num_threads, device_id, seed=12 + device_id)
         self.iterator = iter(CIFAR_INPUT_ITER(batch_size, 'val', root=data_dir))
         self.input = ops.ExternalSource()
         self.input_label = ops.ExternalSource()
@@ -66,7 +75,7 @@ class HybridValPipe_CIFAR(Pipeline):
 
     def iter_setup(self):
         (images, labels) = self.iterator.next()
-        self.feed_input(self.jpegs, images)  # can only in HWC order
+        self.feed_input(self.jpegs, images, layout="HWC")  # can only in HWC order
         self.feed_input(self.labels, labels)
 
     def define_graph(self):
@@ -140,69 +149,66 @@ class CIFAR_INPUT_ITER():
 
     next = __next__
 
-
-def get_cifar_iter_dali(type, image_dir, batch_size, num_threads, local_rank=0, world_size=1, val_size=32, cutout=0):
-    if type == 'train':
-        pip_train = HybridTrainPipe_CIFAR(batch_size=batch_size, num_threads=num_threads, device_id=local_rank,
-                                          data_dir=image_dir,
-                                          crop=32, world_size=world_size, local_rank=local_rank, cutout=cutout)
-        pip_train.build()
-        dali_iter_train = DALIClassificationIterator(pip_train, size=50000 // world_size)
-        return dali_iter_train
-
-    elif type == 'val':
-        pip_val = HybridValPipe_CIFAR(batch_size=batch_size, num_threads=num_threads, device_id=local_rank,
-                                      data_dir=image_dir,
-                                      crop=32, size=val_size, world_size=world_size, local_rank=local_rank)
-        pip_val.build()
-        dali_iter_val = DALIClassificationIterator(pip_val, size=10000 // world_size)
-        return dali_iter_val
-
-
-def get_cifar_iter_torch(type, image_dir, batch_size, num_threads, cutout=0):
-    CIFAR_MEAN = [0.49139968, 0.48215827, 0.44653124]
-    CIFAR_STD = [0.24703233, 0.24348505, 0.26158768]
-    if type == 'train':
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
-        ])
-        train_dst = CIFAR10(root=image_dir, train=True, download=True, transform=transform_train)
-        train_iter = torch.utils.data.DataLoader(train_dst, batch_size=batch_size, shuffle=True, pin_memory=True,
-                                                 num_workers=num_threads)
-        return train_iter
-    else:
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
-        ])
-        test_dst = CIFAR10(root=image_dir, train=False, download=True, transform=transform_test)
-        test_iter = torch.utils.data.DataLoader(test_dst, batch_size=batch_size, shuffle=False, pin_memory=True,
-                                                num_workers=num_threads)
-        return test_iter
-
-
 if __name__ == '__main__':
-    train_loader = get_cifar_iter_dali(type='train', image_dir='/userhome/memory_data/cifar10', batch_size=256,
-                                       num_threads=4)
-    print('start iterate')
-    start = time.time()
-    for i, data in enumerate(train_loader):
-        images = data[0]["data"].cuda(non_blocking=True)
-        labels = data[0]["label"].squeeze().long().cuda(non_blocking=True)
-    end = time.time()
-    print('end iterate')
-    print('dali iterate time: %fs' % (end - start))
-
-    train_loader = get_cifar_iter_torch(type='train', image_dir='/userhome/memory_data/cifar10', batch_size=256,
-                                        num_threads=4)
-    print('start iterate')
+    # iteration of DALI dataloader
+    pip_train = HybridTrainPipe_CIFAR(batch_size=TRAIN_BS, num_threads=NUM_WORKERS, device_id=0, data_dir=IMG_DIR, crop=CROP_SIZE, world_size=1, local_rank=0, cutout=0)
+    pip_test = HybridTestPipe_CIFAR(batch_size=TEST_BS, num_threads=NUM_WORKERS, device_id=0, data_dir=IMG_DIR, crop=CROP_SIZE, size=CROP_SIZE, world_size=1, local_rank=0)
+    train_loader = DALIDataloader(pipeline=pip_train, size=CIFAR_IMAGES_NUM_TRAIN, batch_size=TRAIN_BS, onehot_label=True)
+    test_loader = DALIDataloader(pipeline=pip_test, size=CIFAR_IMAGES_NUM_TEST, batch_size=TEST_BS, onehot_label=True)
+    print("[DALI] train dataloader length: %d"%len(train_loader))
+    print('[DALI] start iterate train dataloader')
     start = time.time()
     for i, data in enumerate(train_loader):
         images = data[0].cuda(non_blocking=True)
         labels = data[1].cuda(non_blocking=True)
     end = time.time()
-    print('end iterate')
-    print('dali iterate time: %fs' % (end - start))
+    train_time = end-start
+    print('[DALI] end train dataloader iteration')
+
+    print("[DALI] test dataloader length: %d"%len(test_loader))
+    print('[DALI] start iterate test dataloader')
+    start = time.time()
+    for i, data in enumerate(test_loader):
+        images = data[0].cuda(non_blocking=True)
+        labels = data[1].cuda(non_blocking=True)
+    end = time.time()
+    test_time = end-start
+    print('[DALI] end test dataloader iteration')
+    print('[DALI] iteration time: %fs [train],  %fs [test]' % (train_time, test_time))
+
+
+    # iteration of PyTorch dataloader
+    transform_train = transforms.Compose([
+        transforms.RandomCrop(CROP_SIZE, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+    ])
+    train_dst = CIFAR10(root=IMG_DIR, train=True, download=True, transform=transform_train)
+    train_loader = torch.utils.data.DataLoader(train_dst, batch_size=TRAIN_BS, shuffle=True, pin_memory=True, num_workers=NUM_WORKERS)
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
+    ])
+    test_dst = CIFAR10(root=IMG_DIR, train=False, download=True, transform=transform_test)
+    test_iter = torch.utils.data.DataLoader(test_dst, batch_size=TEST_BS, shuffle=False, pin_memory=True, num_workers=NUM_WORKERS)
+    print("[PyTorch] train dataloader length: %d"%len(train_loader))
+    print('[PyTorch] start iterate train dataloader')
+    start = time.time()
+    for i, data in enumerate(train_loader):
+        images = data[0].cuda(non_blocking=True)
+        labels = data[1].cuda(non_blocking=True)
+    end = time.time()
+    train_time = end-start
+    print('[PyTorch] end train dataloader iteration')
+
+    print("[PyTorch] test dataloader length: %d"%len(test_loader))
+    print('[PyTorch] start iterate test dataloader')
+    start = time.time()
+    for i, data in enumerate(test_loader):
+        images = data[0].cuda(non_blocking=True)
+        labels = data[1].cuda(non_blocking=True)
+    end = time.time()
+    test_time = end-start
+    print('[PyTorch] end test dataloader iteration')
+    print('[PyTorch] iteration time: %fs [train],  %fs [test]' % (train_time, test_time))
