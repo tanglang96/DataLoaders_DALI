@@ -1,12 +1,27 @@
+import os
+import sys
 import time
-import torch.utils.data
+import torch
+import pickle
+import numpy as np
 import nvidia.dali.ops as ops
+from base import DALIDataloader
+from torchvision import datasets
+from sklearn.utils import shuffle
 import nvidia.dali.types as types
-import torchvision.datasets as datasets
 from nvidia.dali.pipeline import Pipeline
 import torchvision.transforms as transforms
-from nvidia.dali.plugin.pytorch import DALIClassificationIterator, DALIGenericIterator
 
+IMAGENET_MEAN = [0.49139968, 0.48215827, 0.44653124]
+IMAGENET_STD = [0.24703233, 0.24348505, 0.26158768]
+IMAGENET_IMAGES_NUM_TRAIN = 1281167
+IMAGENET_IMAGES_NUM_TEST = 50000
+IMG_DIR = '/gdata/ImageNet2012'
+TRAIN_BS = 256
+TEST_BS = 200
+NUM_WORKERS = 4
+VAL_SIZE = 256
+CROP_SIZE = 224
 
 class HybridTrainPipe(Pipeline):
     def __init__(self, batch_size, num_threads, device_id, data_dir, crop, dali_cpu=False, local_rank=0, world_size=1):
@@ -56,69 +71,70 @@ class HybridValPipe(Pipeline):
         return [output, self.labels]
 
 
-def get_imagenet_iter_dali(type, image_dir, batch_size, num_threads, device_id, num_gpus, crop, val_size=256,
-                           world_size=1,
-                           local_rank=0):
-    if type == 'train':
-        pip_train = HybridTrainPipe(batch_size=batch_size, num_threads=num_threads, device_id=local_rank,
-                                    data_dir=image_dir + '/train',
-                                    crop=crop, world_size=world_size, local_rank=local_rank)
-        pip_train.build()
-        dali_iter_train = DALIClassificationIterator(pip_train, size=pip_train.epoch_size("Reader") // world_size)
-        return dali_iter_train
-    elif type == 'val':
-        pip_val = HybridValPipe(batch_size=batch_size, num_threads=num_threads, device_id=local_rank,
-                                data_dir=image_dir + '/val',
-                                crop=crop, size=val_size, world_size=world_size, local_rank=local_rank)
-        pip_val.build()
-        dali_iter_val = DALIClassificationIterator(pip_val, size=pip_val.epoch_size("Reader") // world_size)
-        return dali_iter_val
-
-
-def get_imagenet_iter_torch(type, image_dir, batch_size, num_threads, device_id, num_gpus, crop, val_size=256,
-                            world_size=1, local_rank=0):
-    if type == 'train':
-        transform = transforms.Compose([
-            transforms.RandomResizedCrop(crop, scale=(0.08, 1.25)),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-        dataset = datasets.ImageFolder(image_dir + '/train', transform)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_threads,
-                                                 pin_memory=True)
-    else:
-        transform = transforms.Compose([
-            transforms.Resize(val_size),
-            transforms.CenterCrop(crop),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-        dataset = datasets.ImageFolder(image_dir + '/val', transform)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_threads,
-                                                 pin_memory=True)
-    return dataloader
-
-
 if __name__ == '__main__':
-    train_loader = get_imagenet_iter_dali(type='train', image_dir='/userhome/memory_data/imagenet', batch_size=256,
-                                          num_threads=4, crop=224, device_id=0, num_gpus=1)
-    print('start iterate')
-    start = time.time()
-    for i, data in enumerate(train_loader):
-        images = data[0]["data"].cuda(non_blocking=True)
-        labels = data[0]["label"].squeeze().long().cuda(non_blocking=True)
-    end = time.time()
-    print('end iterate')
-    print('dali iterate time: %fs' % (end - start))
+    # iteration of DALI dataloader
+    pip_train = HybridTrainPipe(batch_size=TRAIN_BS, num_threads=NUM_WORKERS, device_id=0, data_dir=IMG_DIR+'/train', crop=CROP_SIZE, world_size=1, local_rank=0)
+    pip_test = HybridValPipe(batch_size=TEST_BS, num_threads=NUM_WORKERS, device_id=0, data_dir=IMG_DIR+'/val', crop=CROP_SIZE, size=VAL_SIZE, world_size=1, local_rank=0)
+    train_loader = DALIDataloader(pipeline=pip_train, size=IMAGENET_IMAGES_NUM_TRAIN, batch_size=TRAIN_BS, onehot_label=True)
+    test_loader = DALIDataloader(pipeline=pip_test, size=IMAGENET_IMAGES_NUM_TEST, batch_size=TEST_BS, onehot_label=True)
+    # print("[DALI] train dataloader length: %d"%len(train_loader))
+    # print('[DALI] start iterate train dataloader')
+    # start = time.time()
+    # for i, data in enumerate(train_loader):
+    #     images = data[0].cuda(non_blocking=True)
+    #     labels = data[1].cuda(non_blocking=True)
+    # end = time.time()
+    # train_time = end-start
+    # print('[DALI] end train dataloader iteration')
 
-    train_loader = get_imagenet_iter_torch(type='train', image_dir='/userhome/data/imagenet', batch_size=256,
-                                           num_threads=4, crop=224, device_id=0, num_gpus=1)
-    print('start iterate')
+    print("[DALI] test dataloader length: %d"%len(test_loader))
+    print('[DALI] start iterate test dataloader')
     start = time.time()
-    for i, data in enumerate(train_loader):
+    for i, data in enumerate(test_loader):
         images = data[0].cuda(non_blocking=True)
         labels = data[1].cuda(non_blocking=True)
     end = time.time()
-    print('end iterate')
-    print('torch iterate time: %fs' % (end - start))
+    test_time = end-start
+    print('[DALI] end test dataloader iteration')
+    # print('[DALI] iteration time: %fs [train],  %fs [test]' % (train_time, test_time))
+    print('[DALI] iteration time: %fs [test]' % (test_time))
+
+
+    # iteration of PyTorch dataloader
+    transform_train = transforms.Compose([
+        transforms.RandomResizedCrop(CROP_SIZE, scale=(0.08, 1.25)),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    train_dst = datasets.ImageFolder(IMG_DIR+'/train', transform_train)
+    train_loader = torch.utils.data.DataLoader(train_dst, batch_size=TRAIN_BS, shuffle=True, pin_memory=True, num_workers=NUM_WORKERS)
+    transform_test = transforms.Compose([
+        transforms.Resize(VAL_SIZE),
+        transforms.CenterCrop(CROP_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    test_dst = datasets.ImageFolder(IMG_DIR+'/val', transform_test)
+    test_iter = torch.utils.data.DataLoader(test_dst, batch_size=TEST_BS, shuffle=False, pin_memory=True, num_workers=NUM_WORKERS)
+    # print("[PyTorch] train dataloader length: %d"%len(train_loader))
+    # print('[PyTorch] start iterate train dataloader')
+    # start = time.time()
+    # for i, data in enumerate(train_loader):
+    #     images = data[0].cuda(non_blocking=True)
+    #     labels = data[1].cuda(non_blocking=True)
+    # end = time.time()
+    # train_time = end-start
+    # print('[PyTorch] end train dataloader iteration')
+
+    print("[PyTorch] test dataloader length: %d"%len(test_loader))
+    print('[PyTorch] start iterate test dataloader')
+    start = time.time()
+    for i, data in enumerate(test_loader):
+        images = data[0].cuda(non_blocking=True)
+        labels = data[1].cuda(non_blocking=True)
+    end = time.time()
+    test_time = end-start
+    print('[PyTorch] end test dataloader iteration')
+    # print('[PyTorch] iteration time: %fs [train],  %fs [test]' % (train_time, test_time))
+    print('[PyTorch] iteration time: %fs [test]' % (test_time))
