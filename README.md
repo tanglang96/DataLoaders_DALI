@@ -29,13 +29,23 @@ More details and documents can be found [here](https://docs.nvidia.com/deeplearn
 You can use these dataloaders easily as the following example
 
 ```python
-from cifar10 import get_cifar_iter_dali
-train_loader = get_cifar_iter_dali(type='train',
-                                   image_dir='/userhome/memory_data/cifar10',                                            
-                                   batch_size=256,num_threads=4)
-for i, data in enumerate(train_loader):
-    images = data[0]["data"].cuda(non_blocking=True)
-    labels = data[0]["label"].squeeze().long().cuda(non_blocking=True)
+from base import DALIDataloader
+from cifar10 import HybridTrainPipe_CIFAR
+pip_train = HybridTrainPipe_CIFAR(batch_size=TRAIN_BS,
+                                  num_threads=NUM_WORKERS,
+                                  device_id=0, 
+                                  data_dir=IMG_DIR, 
+                                  crop=CROP_SIZE, 
+                                  world_size=1, 
+                                  local_rank=0, 
+                                  cutout=0)
+train_loader = DALIDataloader(pipeline=pip_train,
+                              size=CIFAR_IMAGES_NUM_TRAIN, 
+                              batch_size=TRAIN_BS, 
+                              onehot_label=True)
+for i, data in enumerate(train_loader): # Using it just like PyTorch dataloader
+    images = data[0].cuda(non_blocking=True)
+    labels = data[1].cuda(non_blocking=True)
 ```
 
 If you have large enough memory for storing dataset, we strongly recommend you to mount a memory disk and put the whole dataset in it to accelerate I/O, like this
